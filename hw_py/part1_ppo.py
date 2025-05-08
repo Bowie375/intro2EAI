@@ -20,7 +20,13 @@ def monte_carlo_advantage(rewards: np.ndarray, values: np.ndarray, gamma: float)
     Returns:
         advantages: (np.array) Gt - V(s)
     """
-    # TODO: your code here
+    
+    rewards_discounted = rewards.copy()
+    for i in range(len(rewards_discounted) - 2, -1, -1):
+        rewards_discounted[i] += gamma * rewards_discounted[i + 1]
+    advantages = rewards_discounted - values[:-1]
+    return advantages
+
 
 def td_residual_advantage(rewards: np.ndarray, values: np.ndarray, gamma: float):
     """
@@ -34,8 +40,11 @@ def td_residual_advantage(rewards: np.ndarray, values: np.ndarray, gamma: float)
     Returns:
         advantages: (np.array) δ_t = r_t + γ * V(s_{t+1}) - V(s_t)
     """
-    # TODO: your code here
-    ...
+
+    advantages = np.zeros_like(rewards)
+    for i in range(0, len(rewards), 1):
+        advantages[i] = rewards[i] + gamma * values[i + 1] - values[i]
+    return advantages
 
 
 def generalized_advantage_estimation(rewards, values, gamma, lam):
@@ -53,8 +62,17 @@ def generalized_advantage_estimation(rewards, values, gamma, lam):
     Returns:
         advantages: (np.array) GAE advantages
     """
-    # TODO: your code here
-    ...
+
+    gae_one_step = np.zeros_like(rewards)
+    for i in range(0, len(rewards), 1):
+        gae_one_step[i] = rewards[i] + gamma * values[i + 1] - values[i]
+        
+    advantages = gae_one_step.copy()
+    for i in range(len(rewards)-2, -1, -1):
+        advantages[i] = gae_one_step[i] + gamma * lam * advantages[i + 1]
+
+    return advantages
+
 
 
 def compute_policy_loss(ratio, adv, dist_entropy, epsilon, entropy_weight):
@@ -71,9 +89,20 @@ def compute_policy_loss(ratio, adv, dist_entropy, epsilon, entropy_weight):
     Returns:
         float: The computed policy loss (scalar).
     """
-    # TODO: your code here
-    ...
 
+    # Clipped surrogate objective
+    clipped_ratio = np.clip(ratio, 1.0 - epsilon, 1.0 + epsilon)
+    surrogate1 = ratio * adv
+    surrogate2 = clipped_ratio * adv
+    surrogate_loss = np.minimum(surrogate1, surrogate2)
+
+    # PPO loss is the negative of the surrogate objective (we maximize the objective)
+    policy_loss = -np.mean(surrogate_loss)
+
+    # Add entropy bonus
+    policy_loss -= entropy_weight * dist_entropy
+
+    return policy_loss
 
 def compute_value_loss(values, returns):
     """
@@ -86,8 +115,8 @@ def compute_value_loss(values, returns):
     Returns:
         float: The computed value loss (scalar).
     """
-    # TODO: your code here
-    ...
+
+    return np.mean((values - returns) ** 2)
 
 # check correctness
 check_monte_carlo(monte_carlo_advantage)
