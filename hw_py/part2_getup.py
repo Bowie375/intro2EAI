@@ -29,7 +29,7 @@ import mujoco
 import numpy as np
 import random
 
-from mujoco_playground._src import mjx_env
+from mujoco_playground._src import mjx_env, collision
 from mujoco_playground._src.locomotion.go1.getup import Getup
 
 DESIRED_BODY_HEIGHT = 0.33
@@ -38,19 +38,16 @@ DESIRED_BODY_HEIGHT = 0.33
 def a2b(a, b):
     return a + (b-a)*random.random()
 
-# [x, [0.2, 0.3], [1.0, 3.0], x, x]
 W_shop = {
-    0: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 0.0, a2b(0.1, 0.12)],
-    1: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 0.0, a2b(0.1, 0.12)],
-    2: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 0.0, a2b(0.1, 0.12)],
-    3: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 0.0, a2b(0.1, 0.12)],
-    4: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 0.0, a2b(0.1, 0.12)],
-    5: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 0.0, a2b(0.1, 0.12)],
-    6: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 0.0, a2b(0.1, 0.12)],
-    7: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 1.0, a2b(0.1, 0.12)],
+    0: [a2b(4.0, 20.0), a2b(0.15, 0.20), a2b(0.020, 0.025), 0.0, a2b(0.01, 0.012)],
+    1: [a2b(4.0, 20.0), a2b(0.15, 0.20), a2b(0.020, 0.025), 0.0, a2b(0.01, 0.012)],
+    2: [a2b(4.0, 20.0), a2b(0.15, 0.20), a2b(0.020, 0.025), 0.0, a2b(0.01, 0.012)],
+    3: [a2b(4.0, 20.0), a2b(0.15, 0.20), a2b(0.020, 0.025), 0.0, a2b(0.01, 0.012)],
+    4: [a2b(4.0, 20.0), a2b(0.15, 0.20), a2b(0.020, 0.025), 0.0, a2b(0.01, 0.012)],
+    5: [a2b(4.0, 20.0), a2b(0.15, 0.20), a2b(0.020, 0.025), 0.0, a2b(0.01, 0.012)],
+    6: [a2b(4.0, 20.0), a2b(0.15, 0.20), a2b(0.020, 0.025), 0.0, a2b(0.01, 0.012)],
+    7: [a2b(4.0, 20.0), a2b(0.15, 0.20), a2b(0.020, 0.025), 0.0, a2b(0.01, 0.012)],
 }
-W = W_shop[0]
-A = 0.0
 
 class MyGetupEnv(Getup):
     def step(self, state: mjx_env.State, action: jax.Array):
@@ -111,17 +108,9 @@ class MyGetupEnv(Getup):
         #rew_vel = jp.exp(-0.1 * (jointvel_penalty+anglevel_penalty))
         #rew_angvel = jp.exp(-jp.sum(jp.square(body_ang_vel)))
 
-        #w = [1.0,1.0,1.0,1.0]
-        #w = [200.0, 0.01, 0.05, 0.1, 0.1] good
-        #w = [200.0, 1.0, 0.1, 0.1, 0.1] bad
-        #w = [200.0, 1.0, 0.1, 0.1, 1.0] bad
-        #w = [200.0, 0.01, 0.1, 0.1, 0.1] good
-        #w = [200.0, 0.05, 0.1, 0.1, 0.1]
-        #w = [200.0, 0.05, 0.5, 0.1, 0.1]
-        #w = [250.0, 0.5, 0.1, 0.1, 0.1]
-        w = W
-
-        reward = w[0]*rew_height + w[1]*rew_orient + w[2]*rew_qpos - w[3]*jointvel_penalty - w[4]*anglevel_penalty
+        w = self.W
+        reward = w[0]*rew_height + w[1]*rew_orient + w[2]*rew_qpos \
+                - w[3]*jointvel_penalty - w[4]*anglevel_penalty
         # TODO: End of your code.
 
         state.info["last_last_act"] = state.info["last_act"]
@@ -132,11 +121,14 @@ class MyGetupEnv(Getup):
         state.metrics["rew_orient"] = rew_orient
         state.metrics["rew_qpos"] = rew_qpos
         state.metrics["anglevel_penalty"] = anglevel_penalty
-        state.metrics["jointvel_penalty"] = A
+        state.metrics["jointvel_penalty"] = gravity_vector[-1]
 
         done = jp.float32(done)
         state = state.replace(data=data, obs=obs, reward=reward, done=done)
         return state
+
+    def set_weights(self, weights):
+        self.W = weights
 
     def reset(self, rng: jax.Array) -> mjx_env.State:
         # Sample a random initial configuration with some probability.
@@ -210,8 +202,6 @@ def train_ppo(cuda_idx:int, t:str):
     os.environ['CUDA_VISIBLE_DEVICES'] = str(cuda_idx)
     sys.stdout = open(f'experiments/part2/{t}/{cuda_idx}/stdout.txt', 'w')
     sys.stderr = sys.stdout
-    W = W_shop[cuda_idx]
-    A = 1.0
 
     import mediapy as media
 
@@ -268,7 +258,9 @@ def train_ppo(cuda_idx:int, t:str):
     )
 
     env = create_env()
+    env.set_weights(W_shop[cuda_idx])
     eval_env = create_env()
+    eval_env.set_weights(W_shop[cuda_idx])
     make_inference_fn, params, metrics = train_fn(
         environment=env,
         eval_env=eval_env,
@@ -282,6 +274,7 @@ def train_ppo(cuda_idx:int, t:str):
 
     # Enable perturbation in the eval env.
     eval_env = create_env()
+    eval_env.set_weights(W_shop[cuda_idx])
 
     jit_reset = jax.jit(eval_env.reset)
     jit_step = jax.jit(eval_env.step)
@@ -350,7 +343,7 @@ if __name__ == '__main__':
 
     processes = []
     t = time.strftime("%Y%m%d_%H%M%S")
-    for i in range(7,8):
+    for i in range(8):
         os.makedirs(f'experiments/part2/{t}/{i}', exist_ok=True)
         with open(f"experiments/part2/{t}/{i}/config.json", 'w') as f:
             json.dump(W_shop[i], f)
