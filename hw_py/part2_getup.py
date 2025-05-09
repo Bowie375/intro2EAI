@@ -1,4 +1,5 @@
 import os
+import sys
 
 import matplotlib.pyplot as plt
 
@@ -26,11 +27,30 @@ from jax import numpy as jp
 from ml_collections import config_dict
 import mujoco
 import numpy as np
+import random
 
 from mujoco_playground._src import mjx_env
 from mujoco_playground._src.locomotion.go1.getup import Getup
 
 DESIRED_BODY_HEIGHT = 0.33
+
+
+def a2b(a, b):
+    return a + (b-a)*random.random()
+
+# [x, [0.2, 0.3], [1.0, 3.0], x, x]
+W_shop = {
+    0: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 0.0, a2b(0.1, 0.12)],
+    1: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 0.0, a2b(0.1, 0.12)],
+    2: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 0.0, a2b(0.1, 0.12)],
+    3: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 0.0, a2b(0.1, 0.12)],
+    4: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 0.0, a2b(0.1, 0.12)],
+    5: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 0.0, a2b(0.1, 0.12)],
+    6: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 0.0, a2b(0.1, 0.12)],
+    7: [200.0, a2b(0.2,0.22), a2b(2.0, 2.5), 1.0, a2b(0.1, 0.12)],
+}
+W = W_shop[0]
+A = 0.0
 
 class MyGetupEnv(Getup):
     def step(self, state: mjx_env.State, action: jax.Array):
@@ -73,16 +93,47 @@ class MyGetupEnv(Getup):
         #   3. joint position (error to default pose)
         #   4. body angular velocity (error to zero)
 
-        rew_term_1 = ...
-        rew_term_2 = ...
+        #rew_height = jp.exp(-10.0 * jp.square(body_pos[2] - DESIRED_BODY_HEIGHT))
+        #rew_height = jp.exp(-3 * (DESIRED_BODY_HEIGHT - body_pos[2]) ** 2)
+        rew_height = -jp.square(body_pos[2] - DESIRED_BODY_HEIGHT)
 
-        reward = rew_term_1 + rew_term_2 + ...
+        #rew_orient = jp.exp(-5.0 * jp.sum(jp.square(gravity_vector - up_vec)))
+        #rew_orient = jp.exp(-jp.sum(jp.square(up_vec - gravity_vector)))
+        rew_orient = -jp.sum(jp.square(up_vec - gravity_vector))
+
+        #weight = jp.array([1.0, 1.0, 0.1] * 4)
+        #rew_qpos = jp.exp(-2.0 * jp.sum(jp.square(joint_qpos - default_qpos)*weight))
+        #rew_qpos = jp.exp(-jp.sum(jp.square(joint_qpos - default_qpos) * weight))
+        rew_qpos = -jp.sum(jp.square(joint_qpos - default_qpos))
+
+        jointvel_penalty = jp.sum(jp.square(joint_qvel))
+        anglevel_penalty = jp.sum(jp.square(body_ang_vel))
+        #rew_vel = jp.exp(-0.1 * (jointvel_penalty+anglevel_penalty))
+        #rew_angvel = jp.exp(-jp.sum(jp.square(body_ang_vel)))
+
+        #w = [1.0,1.0,1.0,1.0]
+        #w = [200.0, 0.01, 0.05, 0.1, 0.1] good
+        #w = [200.0, 1.0, 0.1, 0.1, 0.1] bad
+        #w = [200.0, 1.0, 0.1, 0.1, 1.0] bad
+        #w = [200.0, 0.01, 0.1, 0.1, 0.1] good
+        #w = [200.0, 0.05, 0.1, 0.1, 0.1]
+        #w = [200.0, 0.05, 0.5, 0.1, 0.1]
+        #w = [250.0, 0.5, 0.1, 0.1, 0.1]
+        w = W
+
+        reward = w[0]*rew_height + w[1]*rew_orient + w[2]*rew_qpos - w[3]*jointvel_penalty - w[4]*anglevel_penalty
         # TODO: End of your code.
 
         state.info["last_last_act"] = state.info["last_act"]
         state.info["last_act"] = action
 
         state.metrics["reward"] = reward
+        state.metrics["rew_height"] = rew_height
+        state.metrics["rew_orient"] = rew_orient
+        state.metrics["rew_qpos"] = rew_qpos
+        state.metrics["anglevel_penalty"] = anglevel_penalty
+        state.metrics["jointvel_penalty"] = A
+
         done = jp.float32(done)
         state = state.replace(data=data, obs=obs, reward=reward, done=done)
         return state
@@ -115,7 +166,15 @@ class MyGetupEnv(Getup):
 
         obs = self._get_obs(data, info)
         reward, done = jp.zeros(2)
-        metrics = {"reward": jp.zeros(())}
+        metrics = {
+            "reward": jp.zeros(()),
+            "rew_height": jp.zeros(()),
+            "rew_orient": jp.zeros(()),
+            "rew_qpos": jp.zeros(()),
+            #"rew_angvel": jp.zeros(()),
+            "anglevel_penalty": jp.zeros(()),
+            "jointvel_penalty": jp.zeros(()),
+        }
         return mjx_env.State(data, obs, reward, done, metrics, info)
 
 
@@ -147,7 +206,13 @@ def create_env():
     return env
 
 
-def train_ppo():
+def train_ppo(cuda_idx:int, t:str):
+    os.environ['CUDA_VISIBLE_DEVICES'] = str(cuda_idx)
+    sys.stdout = open(f'experiments/part2/{t}/{cuda_idx}/stdout.txt', 'w')
+    sys.stderr = sys.stdout
+    W = W_shop[cuda_idx]
+    A = 1.0
+
     import mediapy as media
 
     from datetime import datetime
@@ -251,7 +316,9 @@ def train_ppo():
     plt.title(f"Height error: {height_error:.3f}")
     plt.xlabel("steps")
     plt.ylabel("body height")
-    plt.savefig("part2_height_error.png")
+    #plt.savefig("part2_height_error.png")
+
+    plt.savefig(f'experiments/part2/{t}/{cuda_idx}/part2_height_error.png')
 
     render_every = 2
     fps = 1.0 / eval_env.dt / render_every
@@ -271,8 +338,29 @@ def train_ppo():
         width=640,
         scene_option=scene_option,
     )
-    media.write_video('../experiments/solutions/part2_video.mp4', frames)
+    media.write_video(f'experiments/part2/{t}/{cuda_idx}/part2_video.mp4', frames)
+    #media.write_video('../experiments/solutions/part2_video.mp4', frames)
     print("video saved to part2.mp4")
 
 if __name__ == '__main__':
-    train_ppo()
+    import multiprocessing as mp
+    import time
+    import random
+    import json
+
+    processes = []
+    t = time.strftime("%Y%m%d_%H%M%S")
+    for i in range(7,8):
+        os.makedirs(f'experiments/part2/{t}/{i}', exist_ok=True)
+        with open(f"experiments/part2/{t}/{i}/config.json", 'w') as f:
+            json.dump(W_shop[i], f)
+        p = mp.Process(target=train_ppo, args=(i,t))
+        processes.append(p)
+
+    for p in processes:
+        p.start()
+
+    for p in processes:
+        p.join()
+    
+    #train_ppo()

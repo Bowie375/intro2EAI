@@ -89,10 +89,10 @@ class MyWalkEnv(Joystick):
 
         # TODO: your code here. hint: use DESIRED_XY_LIN_VEL and DESIRED_YAW_ANG_VEL as goal
         DESIRED_XY_LIN_VEL
-        tracking_lin_vel = ...
+        tracking_lin_vel = jp.exp(-jp.sum(jp.square(body_lin_vel[:2] - DESIRED_XY_LIN_VEL)))
 
         DESIRED_YAW_ANG_VEL
-        tracking_ang_vel = ...
+        tracking_ang_vel = jp.exp(-jp.square(body_ang_vel[2] - DESIRED_YAW_ANG_VEL))
 
         # TODO: End of your code.
         info = state.info
@@ -394,7 +394,8 @@ def train_ppo():
     plt.title(f"LinVel error: {lin_vel_error:.3f}")
     plt.xlabel("steps")
     plt.ylabel("body linear velocity")
-    plt.savefig("part3_LinVel_error.png")
+
+    plt.savefig("experiments/part3/part3_LinVel_error.png")
 
     render_every = 2
     fps = 1.0 / eval_env.dt / render_every
@@ -414,8 +415,10 @@ def train_ppo():
         width=640,
         scene_option=scene_option,
     )
-    media.write_video('../experiments/solutions/part3_video.mp4', frames)
+    media.write_video('experiments/part3/part3_video.mp4', frames)
+    #media.write_video('../experiments/solutions/part3_video.mp4', frames)
     print("video saved to part3.mp4")
 
 if __name__ == '__main__':
+    os.makedirs("experiments/part3", exist_ok=True)
     train_ppo()
