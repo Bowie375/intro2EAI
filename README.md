@@ -5,7 +5,7 @@
 
 ### How to use this repository
 
-1. Every branch(except the branch named __notes__) of this repository correspond to a seperate assignment, I have provided my own implementation of the answer(in .zip file). You can download the original handout in the course website.
+1. Every branch(except the branch named __notes__) of this repository correspond to a seperate assignment, I have provided my own implementation of the answer(in .zip file). You can download the original handout in the [course website](https://pku-epic.github.io/Intro2EAI_2025/).
 
 2. The __notes__ branch contained my notes while learning this course, I will be honored if you find any of them helpful.
 class project for course: introduction to Embodied AI(by He Wang in PKU)
