@@ -1,3 +1,4 @@
+import sys
 import argparse
 from pprint import pprint
 from dataclasses import fields
@@ -14,7 +15,10 @@ from src.data import Loader, PoseDataset
 from src.model import get_model
 
 
-def main():
+def main(**args_override):
+    sys.stdout = open(f"logs/{args_override['device'][-1]}.log", "w")
+    sys.stderr = sys.stdout
+
     # use argparse so that we can override config.yaml in command line
     # the priproity is command_line_args > config_path > default_value
     parser = argparse.ArgumentParser()
@@ -43,6 +47,14 @@ def main():
         if value is not None:
             setattr(config, field.name, value)
 
+    # override default value with main args
+    for field in fields(Config):
+        value = args_override.get(field.name, None)
+        if value is not None:
+            setattr(config, field.name, value)    
+
+
+    print("[ INFO ] before wandb initialization...")
     pprint(config)
 
     # set seed for reproducibility
@@ -93,12 +105,19 @@ def main():
 
     # load checkpoint if exists
     if config.checkpoint is not None:
-        checkpoint = torch.load(config.checkpoint, map_location="cpu")
+        checkpoint = torch.load(config.checkpoint, map_location=device)
         model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         cur_iter = checkpoint["iter"]
         for _ in range(cur_iter):
             scheduler.step()
+
+        # move optimizer states to device
+        for state in optimizer.state.values():
+            for k, v in state.items():
+                if isinstance(v, torch.Tensor):
+                    state[k] = v.to(device)
+
         print(f"loaded checkpoint from {config.checkpoint}")
     else:
         cur_iter = 0
@@ -120,7 +139,7 @@ def main():
         scheduler.step()
 
         # log train metrics
-        if it % config.log_interval == 0:
+        if it == 0 or (it+1) % config.log_interval == 0:
             logger.log(result_dict, "train", it)
 
         # save checkpoint and optimizer states
@@ -135,7 +154,7 @@ def main():
             )
 
         # run validation for multiple batchs to get stable result
-        if it % config.val_interval == 0:
+        if it == 0 or (it+1) % config.val_interval == 0:
             with torch.no_grad():
                 model.eval()
                 result_dicts = []
@@ -156,4 +175,63 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import time
+    import multiprocessing as mp
+    import trimesh
+
+
+    #################################
+    #   Part 1: Train EstPoseNet    #
+    #################################
+    learning_rate = [1e-3, 1e-4]
+    batch_size = [16, 32]
+
+    processes = []
+    for i in range(1):
+        bsz = 16 # batch_size[int(i & 2 == 2)]
+        mse_rot = True
+        max_iter = 8000
+        lr = 1e-3 # learning_rate[int(i & 1 == 1)]
+        args = dict(
+            model_type = "est_pose",
+            batch_size = bsz,
+            use_mse_loss_on_rot = mse_rot,
+            learning_rate = lr,
+            #checkpoint = "/home/bowenxiao/research/Assignment2/exps/est_pose_bsz_16_lr_0.001_mse_rot_True_20250417_234428/checkpoint/checkpoint_5000.pth",
+            max_iter = max_iter,
+            device = f"cuda:{i}",
+            #exp_name = f"est_pose_bsz_{bsz}_lr_{lr}_mse_rot_{mse_rot}_{time.strftime('%Y%m%d_%H%M%S')}",
+            exp_name = "debug"
+        )
+
+        p = mp.Process(target=main, kwargs=args)
+        p.start()
+        p.join()
+
+
+    ##################################
+    #   Part 2: Train EstCoordNet    #
+    ##################################
+    """ Comment the previous part and uncomment the following part to train EstCoordNet.
+    
+    learning_rate = [1e-3, 1e-4]
+    batch_size = [16]
+
+    processes = []
+    for i in range(1):
+        bsz = 16 # batch_size[int(i & 2 == 2)]
+        lr = 1e-3 # learning_rate[int(i & 1 == 1)]
+        mse_rot = False
+        args = dict(
+            model_type = "est_coord",
+            learning_rate = lr,
+            batch_size = bsz,
+            use_mse_loss_on_rot = mse_rot,
+            device = f"cuda:{i}",
+            exp_name = f"est_coord_bsz_{bsz}_lr_{lr}_mse_rot_{mse_rot}_{time.strftime('%Y%m%d_%H%M%S')}",
+        )
+
+        p = mp.Process(target=main, kwargs=args)
+        p.start()
+        p.join()
+    """

@@ -19,7 +19,7 @@ class Config:
     """the object we want to grasp"""
     checkpoint: str = None
     """if not None, then we will continue training from this checkpoint"""
-    max_iter: int = 10000
+    max_iter: int = 3000 # 10000
     """the maximum number of iterations"""
     batch_size: int = 16
     """the batch size for training"""
@@ -29,13 +29,13 @@ class Config:
     """we use cosine decay for learning rate, and this is the minimum (and final) learning rate"""
     log_interval: int = 100
     """log for each log_interval iterations"""
-    save_interval: int = 2500
+    save_interval: int = 200
     """save the model every save_interval iterations"""
-    val_interval: int = 500
+    val_interval: int = 200
     """get metric from validation set every val_interval iterations"""
     val_num: int = 10
     """run val_num batches for each validation to get stable result"""
-    num_workers: int = 8
+    num_workers: int = 4
     """how many workers to use for data loading, if you are debugging, use 0 so that it won't create new processes"""
     seed: int = 0
     """the random seed for training"""
@@ -43,6 +43,10 @@ class Config:
     """the device to use for training, you can use cuda:0 if you have a gpu"""
     point_num: int = 1024
     """number of points sampled from the full observation point cloud"""
+
+    use_mse_loss_on_rot: bool = False
+    """use mse loss or rot distance in radians on rotation"""
+
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":

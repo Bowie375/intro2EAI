@@ -47,9 +47,9 @@ class EstPoseNet(nn.Module):
             Parameters
             ----------
             r1 : torch.tensor
-                The first rotation matrix (3, 3).
+                The first rotation matrix (N, 3, 3).
             r2 : torch.tensor
-                The second rotation matrix (3, 3).
+                The second rotation matrix (N, 3, 3).
 
             Returns
             -------
@@ -57,21 +57,30 @@ class EstPoseNet(nn.Module):
                 The relative rotation angle in radians.
             """
 
-            trace = torch.diagonal(r1 @ r2.T, dim1=-2, dim2=-1).sum(dim=1)
-            return torch.arccos(torch.clip((trace - 1) / 2, -1, 1))
+            trace = torch.diagonal(r1 @ r2.transpose(1,2), dim1=-2, dim2=-1).sum(dim=1)
+            return torch.arccos(torch.clip((trace - 1) / 2, -1, 1)).mean()
 
         trans_pred, rot_pred = self.est(pc)
-        trans_loss = nn.functional.mse_loss(trans_pred, trans)
-        rot_loss = rot_dist(rot_pred, rot)
 
-        gamma = 10.0
-        loss = gamma * trans_loss + rot_loss
+        if self.config.use_mse_loss_on_rot:
+            #gt_tf = torch.cat([trans, rot.reshape(-1, 9)], dim=1)
+            #pred_tf = torch.cat([trans_pred, rot_pred.reshape(-1, 9)], dim=1)
+            #loss = nn.functional.mse_loss(pred_tf, gt_tf)
+            rot_loss = nn.functional.mse_loss(rot_pred, rot)
+            trans_loss = nn.functional.mse_loss(trans_pred, trans)
+            loss = rot_loss + trans_loss
+        else:
+            rot_loss = rot_dist(rot_pred, rot)
+            trans_loss = nn.functional.mse_loss(trans_pred, trans)
+            gamma = 10.0
+            loss = gamma * trans_loss + rot_loss
+
 
         metric = dict(
             loss=loss,
             # additional metrics you want to log
-            trans_loss=trans_loss,
-            rot_loss=rot_loss,
+            trans_distance=torch.norm(trans_pred - trans, dim=1).mean(),
+            rot_distance=rot_dist(rot_pred, rot),
         )
         return loss, metric
 
@@ -98,9 +107,16 @@ class EstPoseNet(nn.Module):
         pred, feat = self.model(pc.permute(0,2,1))
         trans_pred = pred[:, :3]
         rot_pred_raw = pred[:, 3:].reshape(-1, 3, 3)
+
         U, S, V_T = torch.linalg.svd(rot_pred_raw)
-        rot_pred = torch.matmul(U, V_T.transpose(1, 2))
-        rot_pred = rot_pred / torch.linalg.det(rot_pred)
+        U_prime = U.clone()
+        det = torch.det(U @ V_T)
+        mask = (det < 0)
+
+        U_prime[mask, :, -1] *= -1
+        rot_pred = torch.zeros_like(rot_pred_raw, device=pc.device, dtype=pc.dtype)
+        rot_pred[mask] = U_prime[mask] @ V_T[mask]
+        rot_pred[~mask] = U[~mask] @ V_T[~mask]
 
         return trans_pred, rot_pred
 

@@ -1,8 +1,12 @@
 # vscode
 .vscode
+ 
+log*
+
+ckpt/
 
 # asset
-asset
+# asset
 
 # data
 data
@@ -11,7 +15,7 @@ data
 libs
 
 # exps
-exps
+# exps
 wandb
 
 # below is github's .gitignore for python

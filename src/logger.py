@@ -33,8 +33,10 @@ class Logger:
         self.exp_name = config.exp_name
         if self.exp_name != "debug":
             wandb.init(project="Intro2EAI", name=self.exp_name, config=asdict(config))
+            self.config = wandb.config.items()
         else:
             warnings.warn("exp_name is debug, so we don't log anything in wandb")
+            self.config = asdict(config)
 
         # create exp directory
         os.makedirs(get_exp_dir(self.exp_name), exist_ok=True)
@@ -43,9 +45,15 @@ class Logger:
 
         # save config
         with open(get_exp_config_path(self.exp_name), "w") as f:
-            yaml.dump(asdict(config), f)
+            yaml.dump(dict(self.config), f)
 
         save_code_and_git(get_exp_dir(self.exp_name))
+
+    def get_config(self):
+        """
+        return wandb config
+        """
+        return self.config
 
     def log(self, dic: Dict[str, float], mode: str, step: int):
         """

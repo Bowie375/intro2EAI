@@ -29,6 +29,7 @@ class PoseDataset(Dataset):
         """
         super().__init__()
         self.config = config
+        self.mode = mode
         self.robot_cfg = get_robot_cfg(config.robot)
         self.data_root = os.path.join("data", config.obj_name, mode)
         self.files = sorted(os.listdir(self.data_root))
@@ -97,15 +98,21 @@ class PoseDataset(Dataset):
             full_pc_camera = get_pc(
                 depth_array, self.robot_cfg.camera_cfg.intrinsics
             ) * np.array([-1, -1, 1])
+
             full_pc_world = (
                 np.einsum("ab,nb->na", camera_pose[:3, :3], full_pc_camera)
                 + camera_pose[:3, 3]
             )
+            pc_mask = get_workspace_mask(full_pc_world)
+
+            ## augmentation
+            if self.mode == "train":
+                full_pc_camera += np.random.normal(0, 0.005, size=full_pc_camera.shape)
+
             full_coord = np.einsum(
                 "ba,nb->na", obj_pose[:3, :3], full_pc_world - obj_pose[:3, 3]
             )
 
-            pc_mask = get_workspace_mask(full_pc_world)
             sel_pc_idx = np.random.randint(0, np.sum(pc_mask), self.config.point_num)
 
             pc_camera = full_pc_camera[pc_mask][sel_pc_idx]
@@ -113,10 +120,10 @@ class PoseDataset(Dataset):
             rel_obj_pose = np.linalg.inv(camera_pose) @ obj_pose
 
             return dict(
-                pc=pc_camera.astype(np.float32),
-                coord=coord.astype(np.float32),
-                trans=rel_obj_pose[:3, 3].astype(np.float32),
-                rot=rel_obj_pose[:3, :3].astype(np.float32),
+                pc=pc_camera.astype(np.float32),    # under camera frame
+                coord=coord.astype(np.float32),     # under world frame
+                trans=rel_obj_pose[:3, 3].astype(np.float32),   # under camera frame
+                rot=rel_obj_pose[:3, :3].astype(np.float32),    # under camera frame
                 camera_pose=camera_pose.astype(np.float32),
                 obj_pose_in_world=obj_pose.astype(np.float32),
             )
@@ -139,3 +146,11 @@ class Loader:
             self.iter = iter(self.loader)
             data = next(self.iter)
         return data
+
+
+if __name__ == "__main__":
+    dataset = PoseDataset(Config(), "train", 100)
+    for i in range(len(dataset)):
+        data = dataset[i]
+        print(data.keys())
+        break
